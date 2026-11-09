@@ -1,0 +1,394 @@
+{% doc %}
+  Custom product media gallery: scroll-snap slider with arrows, thumbnails, dots, variants sync and zoom dialog.
+{% enddoc %}
+
+{% liquid
+  assign product = closest.product
+  assign selected_media = product.selected_or_first_available_variant.featured_media
+
+  # Open on the selected variant's image. media.position starte at 1, slides start at 0
+  assign start_index = 0
+  if selected_media
+    assign start_index = selected_media.position | minus: 1
+  endif
+%}
+
+{% if product.media.size > 0 %}
+  <script src="{{ 'pdp-image-gallery.js' | asset_url}}" type="module"></script>
+
+  <custom-media-gallery
+    class="custom-media-gallery"
+    style="
+      --gallery-aspect-ratio: {{ block.settings.aspect_ratio }}
+      --gallery-fit: {{ block.settings.media_fit }};
+      --gallery-radius: {{ block.settings.media_radius }}px;
+      --gallery-background: {{ block.settings.background_color }};
+      --gallery-thumbnail-width: {{ block.settings.thumbnail_width }}px;
+    "
+    {{ block.shopify_attributes }}
+  >
+    {%- if block.settings.zoom -%}
+      <dialog class="custom-media-gallery__zoom" ref="zoomDialog">
+        <button
+          type="button"
+          class="custom-media-gallery__zoom-close"
+          on:click="/closeZoom"
+          aria-label="{{ 'actions.close' | t }}"
+        >
+          {{- 'icon-close.svg' | inline_asset_content -}}
+        </button>
+        <ul class="custom-media-gallery__zoom-list">
+          {%- for media in product.media -%}
+            <li ref="zoomSlides[]">
+              {%- if media.media_type == 'image' -%}
+                {{
+                  media
+                  | image_url: width: 2400
+                  | image_tag: loading: 'lazy', widths: '1200, 1800, 2400', sizes: '100vw'
+                }}
+              {%- else -%}
+                {{ media | media_tag: image_size: '2400x' }}
+              {%- endif -%}
+            </li>
+          {%- endfor -%}
+        </ul>
+      </dialog>
+    {%- endif -%}
+
+    <div class="custom-media-gallery__viewport">
+      <ul class="custom-media-gallery__track" ref="track">
+        {% for media in product.media %}
+          <li class="custom-media-gallery__slide" ref="slides[]" data-media-id="{{ media.id }}">
+            {% if media.media_type == 'image' %}
+              {% liquid
+                # Only the first visible image loads eagerly, which helps LCP
+                if forloop.index0 == start_index
+                  assign loading = 'eager'
+                  assign priority = 'high'
+                else
+                  assign loading = 'lazy'
+                  assign priority = 'auto'
+                endif
+              %}
+              {% if block.settings.zoom %}
+                <button
+                  type="button"
+                  class="custom-media-gallery__zoom-trigger"
+                  on:click="/openZoom/{{ forloop.index0 }}"
+                  aria-label="Zoom image"
+                >
+                  {{
+                    media
+                    | image_url: width: 1600
+                    | image_tag:
+                      widths: '400, 600, 800, 1100, 1600',
+                      sizes: '(min-width: 750px) 50vw, 100vw',
+                      loading: loading,
+                      fetchpriority: priority
+                  }}
+                </button>
+              {% else %}
+                {{
+                  media
+                  | image_url: width: 1600
+                  | image_tag:
+                    widths: '400, 600, 800, 1100, 1600',
+                    sizes: '(min-width: 750px) 50vw, 100vw',
+                    loading: loading,
+                    fetchpriority: priority
+                }}
+              {% endif %}
+
+            {% else %}
+              {{ media | media_tag: image_size: '1600x' }}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+
+      {%- if product.media.size > 1 -%}
+        <button
+          type="button"
+          class="custom-media-gallery__arrow custom-media-gallery__arrow--previous"
+          ref="previous"
+          on:click="/previous"
+          aria-label="Previous slide"
+        >
+          {{- 'icon-caret.svg' | inline_asset_content -}}
+        </button>
+        <button
+          type="button"
+          class="custom-media-gallery__arrow custom-media-gallery__arrow--next"
+          ref="next"
+          on:click="/next"
+          aria-label="Next slide"
+        >
+          {{- 'icon-caret.svg' | inline_asset_content -}}
+        </button>
+      {%- endif -%}
+    </div>
+
+    {%- if product.media.size > 1 -%}
+      <div class="custom-media-gallery__thumbnails" ref="thumbnailList">
+        {%- for media in product.media -%}
+          <button
+            type="button"
+            class="custom-media-gallery__thumbnail"
+            ref="thumbnails[]"
+            on:click="/goTo/{{ forloop.index0 }}"
+            aria-label="Show media {{ forloop.index }} of {{ forloop.length }}"
+            aria-current="{% if forloop.index0 == start_index %}true{% else %}false{% endif %}"
+          >
+            {{
+              media.preview_image
+              | image_url: width: 240
+              | image_tag: loading: 'lazy', widths: '120, 240', sizes: '72px'
+            }}
+          </button>
+        {%- endfor -%}
+      </div>
+
+      <div class="custom-media-gallery__dots">
+        {%- for media in product.media -%}
+          <button
+            type="button"
+            class="custom-media-gallery__dot"
+            ref="dots[]"
+            on:click="/goTo/{{ forloop.index0 }}"
+            aria-label="Show media {{ forloop.index }} of {{ forloop.length }}"
+            aria-current="{% if forloop.index0 == start_index %}true{% else %}false{% endif %}"
+          ></button>
+        {%- endfor -%}
+      </div>
+    {%- endif -%}
+  </custom-media-gallery>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Custom media gallery",
+  "tag": null,
+  "settings": [
+    {
+      "type": "select",
+      "id": "aspect_ratio",
+      "label": "Aspect Ratio",
+      "options": [
+        {
+          "value": "1",
+          "label": "Square"
+        },
+        { "value": "0.8", "label": "Portrait 4:5" },
+        { "value": "1.333", "label": "Landscape 4:3" }
+      ],
+      "default": "1"
+    },
+    {
+      "type": "select",
+      "id": "media_fit",
+      "label": "Media fit",
+      "options": [
+        { "value": "contain", "label": "Contain" },
+        { "value": "cover", "label": "Cover" }
+      ],
+      "default": "contain"
+    },
+    {
+      "type": "range",
+      "id": "media_radius",
+      "label": "Corner radius",
+      "min": 0,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "default": 20
+    },
+    { "type": "color", "id": "background_color", "label": "Slide background", "alpha": true, "default": "#ffe6fa66" },
+    {
+      "type": "range",
+      "id": "thumbnail_width",
+      "label": "Thumbnail width",
+      "min": 48,
+      "max": 120,
+      "step": 4,
+      "unit": "px",
+      "default": 72
+    },
+    { "type": "checkbox", "id": "zoom", "label": "Enable zoom", "default": true }
+  ]
+}
+{% endschema %}
+
+{% stylesheet %}
+  .custom-media-gallery {
+    display: grid;
+    gap: 12px;
+  }
+
+  .custom-media-gallery__viewport {
+    position: relative;
+  }
+
+  /* The slider: a horizontal scroll area that snaps one slide at a time */
+  .custom-media-gallery__track {
+    position: relative; /* makes slide.offsetLeft relative to the track, which the JS relies on */
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .custom-media-gallery__track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .custom-media-gallery__slide {
+    position: relative;
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    aspect-ratio: var(--gallery-aspect-ratio, 1);
+    overflow: hidden;
+    border-radius: var(--gallery-radius, 0);
+    background: var(--gallery-background, transparent);
+  }
+
+  .custom-media-gallery__slide :is(img, video, iframe, model-viewer) {
+    width: 100%;
+    height: 100%;
+    object-fit: var(--gallery-fit, contain);
+  }
+
+  .custom-media-gallery__arrow {
+    position: absolute;
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 0.85);
+    cursor: pointer;
+  }
+
+  .custom-media-gallery__arrow--previous {
+    left: 12px;
+    rotate: 90deg;
+  }
+
+  .custom-media-gallery__arrow--next {
+    right: 12px;
+    rotate: -90deg;
+  }
+
+  .custom-media-gallery__arrow:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .custom-media-gallery__thumbnails {
+    position: relative;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .custom-media-gallery__thumbnail {
+    flex: 0 0 var(--gallery-thumbnail-width, 72px);
+    aspect-ratio: var(--gallery-aspect-ratio, 1);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--gallery-background, transparent);
+    cursor: pointer;
+  }
+
+  .custom-media-gallery__thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: var(--gallery-fit, contain);
+  }
+
+  .custom-media-gallery__thumbnail[aria-current='true'] {
+    border-color: var(--color-foreground);
+  }
+
+  .custom-media-gallery__dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .custom-media-gallery__dot {
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgb(var(--color-foreground-rgb) / 0.25);
+  }
+
+  .custom-media-gallery__dot[aria-current='true'] {
+    background: var(--color-foreground);
+  }
+
+  /* Mobile shows dots, desktop shows arrows and thumbnails */
+  @media screen and (max-width: 749px) {
+    .custom-media-gallery__arrow,
+    .custom-media-gallery__thumbnails {
+      display: none;
+    }
+  }
+
+  @media screen and (min-width: 750px) {
+    .custom-media-gallery__dots {
+      display: none;
+    }
+  }
+
+  .custom-media-gallery__zoom-trigger {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: zoom-in;
+  }
+
+  .custom-media-gallery__zoom {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    padding: 0;
+    border: 0;
+  }
+
+  .custom-media-gallery__zoom-list {
+    display: grid;
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .custom-media-gallery__zoom-list img {
+    width: 100%;
+    height: auto;
+  }
+
+  .custom-media-gallery__zoom-close {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 1;
+  }
+{% endstylesheet %}
